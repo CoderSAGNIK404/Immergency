@@ -6,303 +6,414 @@
     <title>Multi-Scenario Emergency VR Training</title>
     <!-- A-Frame Core -->
     <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
-    <!-- A-Frame Physics System (Ammo driver) -->
+    <!-- A-Frame Physics -->
     <script src="https://cdn.jsdelivr.net/gh/MozillaReality/ammo.js@8bbc0ea/builds/ammo.wasm.js"></script>
     <script src="https://cdn.jsdelivr.net/gh/c-frame/aframe-physics-system@v4.2.2/dist/aframe-physics-system.min.js"></script>
-    <!-- A-Frame Extras (movement controls) -->
+    <!-- Movement Controls -->
     <script src="https://cdn.jsdelivr.net/gh/c-frame/aframe-extras@7.2.0/dist/aframe-extras.min.js"></script>
 
-    <!-- ===== CUSTOM COMPONENTS & GAME LOGIC ===== -->
     <script>
-        // Global Game State
         window.gameState = {
             currentScenario: 'HUB',
+            crouching: false,
+            // Fire State
+            fireAlarmPulled: false,
+            fireBrigadeCalled: false,
+            smokeTimer: 0,
+            // Flood State
+            powerOff: false,
             waterLevel: -0.5,
-            floodActive: false
+            floodTimer: 0,
+            floodActive: false,
+            // Quake State
+            quakeTimer: 0,
+            quakeActive: false,
+            // War State
+            warTimer: 15,
+            warActive: false
         };
 
-        // Teleporter (Portal Doors)
+        // Teleporter (Portals)
         AFRAME.registerComponent('portal', {
             schema: { target: { type: 'vec3' }, scenario: { type: 'string' } },
             init: function () {
                 this.el.addEventListener('click', () => {
                    let rig = document.querySelector('#rig');
-                   // Teleport rig
+                   // Teleport
                    rig.setAttribute('position', this.data.target);
-                   // Reset Y pos in case player was crouching
-                   rig.setAttribute('position', {x: this.data.target.x, y: 0, z: this.data.target.z});
+                   // Undo crouch if active
+                   if (window.gameState.crouching) {
+                       window.gameState.crouching = false;
+                       rig.setAttribute('position', {x: this.data.target.x, y: 0, z: this.data.target.z});
+                   }
                    
                    window.gameState.currentScenario = this.data.scenario;
                    
-                   // Reset flood state if entering flood room
-                   if(this.data.scenario === 'FLOOD') {
+                   // Reset scenario states
+                   if (this.data.scenario === 'FIRE') {
+                       window.gameState.fireAlarmPulled = false;
+                       window.gameState.fireBrigadeCalled = false;
+                       window.gameState.smokeTimer = 0;
+                       document.querySelector('#fire-light').setAttribute('intensity', '1.5');
+                   }
+                   else if (this.data.scenario === 'FLOOD') {
                        window.gameState.floodActive = true;
+                       window.gameState.powerOff = false;
                        window.gameState.waterLevel = -0.5;
+                       document.querySelector('#water-plane').setAttribute('position', '0 -0.5 0');
+                   }
+                   else if (this.data.scenario === 'EARTHQUAKE') {
+                       window.gameState.quakeActive = true;
+                       window.gameState.quakeTimer = 0;
+                       document.querySelector('#eq-room').object3D.position.set(-100, 0, 0);
+                   }
+                   else if (this.data.scenario === 'WAR') {
+                       window.gameState.warActive = true;
+                       window.gameState.warTimer = 15;
+                       document.querySelector('#flash-plane').setAttribute('material', 'opacity: 0');
                    }
                 });
             }
         });
 
-        // Main Scenario Manager (Ticks every frame to check conditions)
+        // Scenario + Keys Manager
         AFRAME.registerComponent('scenario-manager', {
-            tick: function () {
+            init: function() {
+                this.hudText = document.querySelector('#hud-text');
+                this.overlay = document.querySelector('#fade-overlay');
+                
+                // Keyboard Listeners for Actions
+                document.addEventListener('keydown', (e) => {
+                    let key = e.key.toLowerCase();
+                    let state = window.gameState;
+                    let cam = document.querySelector('#head');
+                    let headPos = new THREE.Vector3();
+                    cam.object3D.getWorldPosition(headPos);
+
+                    // CROUCH [C]
+                    if (key === 'c') {
+                        let rig = document.querySelector('#rig');
+                        let curPos = rig.getAttribute('position');
+                        if (state.crouching) {
+                            rig.setAttribute('position', {x: curPos.x, y: 0, z: curPos.z});
+                            state.crouching = false;
+                        } else {
+                            rig.setAttribute('position', {x: curPos.x, y: -0.8, z: curPos.z});
+                            state.crouching = true;
+                        }
+                    }
+                    
+                    // FIRE ALARM [F]
+                    if (key === 'f' && state.currentScenario === 'FIRE') {
+                        // Check distance to alarm (0, 1.5, 96 relative to world... room is at 0,0,100, so alarm is at Z=96 world)
+                        let alarmPos = new THREE.Vector3(0, 1.5, 96);
+                        if (headPos.distanceTo(alarmPos) < 2.0) {
+                            state.fireAlarmPulled = true;
+                            document.querySelector('#alarm-box').setAttribute('color', 'green');
+                        }
+                    }
+
+                    // CALL FIRE BRIGADE [E]
+                    if (key === 'e' && state.currentScenario === 'FIRE') {
+                        if (state.fireAlarmPulled) {
+                            state.fireBrigadeCalled = true;
+                        }
+                    }
+
+                    // PULL POWER BREAKER [P]
+                    if (key === 'p' && state.currentScenario === 'FLOOD') {
+                        // Check distance to breaker (flood room is at 100,0,0, breaker at z=-4.8 local -> 100, 2.8, -4.8 world)
+                        let breakerPos = new THREE.Vector3(100, 2.8, -4.8);
+                        if (headPos.distanceTo(breakerPos) < 2.5) {
+                            state.powerOff = true;
+                            document.querySelector('#breaker-handle').setAttribute('color', 'green');
+                        }
+                    }
+                });
+            },
+
+            tick: function (time, timeDelta) {
                 let cam = document.querySelector('#head');
                 if (!cam) return;
                 
                 let headPos = new THREE.Vector3();
                 cam.object3D.getWorldPosition(headPos);
                 
-                let textEl = document.querySelector('#watch-text');
-                if (!textEl) return;
+                let state = window.gameState;
+                let text = "";
 
-                let state = window.gameState.currentScenario;
-
-                // ------------------------------------
-                // HUB ROOM
-                // ------------------------------------
-                if (state === 'HUB') {
-                    textEl.setAttribute('value', 'HUB:\nCHOOSE\nSCENARIO');
-                    textEl.setAttribute('color', 'white');
+                // HUB
+                if (state.currentScenario === 'HUB') {
+                    text = "HUB: Select an emergency to practice.\nKeys: [WASD] to Move, [C] to Crouch.";
                 }
                 
-                // ------------------------------------
-                // FIRE PROTOCOL (0, 0, 100)
-                // ------------------------------------
-                else if (state === 'FIRE') {
-                    // Smoke layer sits at Y=1.2 globally
-                    // If head is above 1.2m, take damage
-                    if (headPos.y > 1.2) {
-                        textEl.setAttribute('value', 'WARNING:\nTOXIC SMOKE!\nCROUCH LOW');
-                        textEl.setAttribute('color', '#FF0000');
+                // -------------------------------------------------------------
+                // FIRE SCENARIO
+                // -------------------------------------------------------------
+                else if (state.currentScenario === 'FIRE') {
+                    if (!state.fireAlarmPulled) {
+                        text = "FIRE! Walk to red box and press [F] to pull Alarm.";
+                    } else if (!state.fireBrigadeCalled) {
+                        text = "ALARM SOUNDING. Press [E] to call 911 / Fire Brigade.";
                     } else {
-                        textEl.setAttribute('value', 'SAFE:\nKEEP LOW\nTO EXIT');
-                        textEl.setAttribute('color', '#00FF00');
-                    }
-                }
-                
-                // ------------------------------------
-                // EARTHQUAKE PROTOCOL (-100, 0, 0)
-                // ------------------------------------
-                else if (state === 'EARTHQUAKE') {
-                    let eqRoom = document.querySelector('#eq-room');
-                    // Vibrate/Shake room
-                    let shake = 0.08;
-                    eqRoom.object3D.position.set(-100 + (Math.random()-0.5)*shake, (Math.random()-0.5)*shake, (Math.random()-0.5)*shake);
-                    
-                    // Table bounds check relative to room (-100, 0, 0)
-                    let rx = headPos.x + 100;
-                    let rz = headPos.z;
-                    // Table is 1.5x1.5m at origin. X,Z bounds approx -0.75 to 0.75. Height < 1.0.
-                    let underTable = headPos.y < 1.0 && rx > -0.8 && rx < 0.8 && rz > -0.8 && rz < 0.8;
-                    
-                    if (underTable) {
-                        textEl.setAttribute('value', 'SAFE:\nCOVER & HOLD');
-                        textEl.setAttribute('color', '#00FF00');
-                    } else {
-                        textEl.setAttribute('value', 'WARNING:\nQUAKE!\nGET UNDER TABLE');
-                        textEl.setAttribute('color', '#FF0000');
-                    }
-                }
-                
-                // ------------------------------------
-                // WAR/AIR RAID PROTOCOL (0, 0, -100)
-                // ------------------------------------
-                else if (state === 'WAR') {
-                    // Room is at (0, 0, -100). Safe zone is interior hallway at X > 2. Windows at X < -4.
-                    let rx = headPos.x; 
-                    if (rx > 2 && rx < 5) {
-                        textEl.setAttribute('value', 'SAFE:\nAWAY FROM\nWINDOWS');
-                        textEl.setAttribute('color', '#00FF00');
-                    } else {
-                        textEl.setAttribute('value', 'WARNING:\nAIR RAID!\nSEEK INTERIOR');
-                        textEl.setAttribute('color', '#FF0000');
-                    }
-                }
-                
-                // ------------------------------------
-                // FLOOD PROTOCOL (100, 0, 0)
-                // ------------------------------------
-                else if (state === 'FLOOD') {
-                    if (window.gameState.floodActive) {
-                        // Rise water
-                        window.gameState.waterLevel += 0.002;
-                        if (window.gameState.waterLevel > 3) window.gameState.waterLevel = 3;
-                        
-                        let wp = document.querySelector('#water-plane');
-                        if (wp) wp.setAttribute('position', {x: 0, y: window.gameState.waterLevel, z: 0});
-                        
-                        // Check breaker box distance (box relative to flood room is at 0, 2.8, -4.8, so world is 100, 2.8, -4.8)
-                        let lHand = document.querySelector('#leftHand');
-                        let rHand = document.querySelector('#rightHand');
-                        if (lHand && rHand) {
-                            let lPos = new THREE.Vector3(); lHand.object3D.getWorldPosition(lPos);
-                            let rPos = new THREE.Vector3(); rHand.object3D.getWorldPosition(rPos);
-                            let boxPos = new THREE.Vector3(100, 2.8, -4.8);
-                            
-                            // If player hands overlap breaker, save
-                            if (boxPos.distanceTo(lPos) < 0.5 || boxPos.distanceTo(rPos) < 0.5) {
-                                window.gameState.floodActive = false;
+                        // Smoke hazard
+                        if (headPos.y > 1.2) {
+                            text = "WARNING: TOXIC SMOKE! Press [C] to Crouch immediately!";
+                            state.smokeTimer += timeDelta;
+                            if (state.smokeTimer > 3000) {
+                                this.failScenario("Smoke inhalation. Always stay low under smoke.");
                             }
+                        } else {
+                            text = "SAFE: You are low. Crawl (WASD) to the green Exit.";
+                            state.smokeTimer = Math.max(0, state.smokeTimer - timeDelta);
                         }
                     }
+                }
+                
+                // -------------------------------------------------------------
+                // FLOOD SCENARIO
+                // -------------------------------------------------------------
+                else if (state.currentScenario === 'FLOOD' && state.floodActive) {
+                    state.waterLevel += (0.2 * (timeDelta / 1000)); // Rise 0.2m per second
+                    if (state.waterLevel > 2.5) state.waterLevel = 2.5;
                     
-                    if (!window.gameState.floodActive) {
-                        textEl.setAttribute('value', 'SAFE:\nPOWER OFF\nFLOOD STOPPED');
-                        textEl.setAttribute('color', '#00FF00');
+                    let wp = document.querySelector('#water-plane');
+                    if (wp) wp.setAttribute('position', {x: 0, y: state.waterLevel, z: 0}); // Local to flood room
+
+                    if (!state.powerOff) {
+                        text = "FLASH FLOOD! Press [P] near breaker to cut Power!";
+                        // If water hits player with power on -> electrocution
+                        if (headPos.y < state.waterLevel) {
+                            this.failScenario("Electrocuted! Always cut power before water touches you.");
+                            state.floodActive = false;
+                        }
                     } else {
-                        textEl.setAttribute('value', 'WARNING:\nWATER RISING\nPULL BREAKER');
-                        textEl.setAttribute('color', '#FF0000');
+                        text = "POWER OFF. Water rising! Use [WASD] to climb stairs to high ground.";
+                        // If water hits player head -> drowning
+                        if (headPos.y < state.waterLevel - 0.2) {
+                            this.failScenario("Water overtook you. Get to high ground faster.");
+                            state.floodActive = false;
+                        }
+                    }
+
+                    // Win condition: On platform (X > 102, Y > 2.0)
+                    if (headPos.y > 2.0 && headPos.x > 102) {
+                        text = "SURVIVED: You reached high ground. Click Exit.";
+                        state.floodActive = false;
                     }
                 }
-            }
-        });
+                
+                // -------------------------------------------------------------
+                // EARTHQUAKE SCENARIO
+                // -------------------------------------------------------------
+                else if (state.currentScenario === 'EARTHQUAKE' && state.quakeActive) {
+                    state.quakeTimer += timeDelta;
+                    let eqRoom = document.querySelector('#eq-room');
+                    
+                    if (state.quakeTimer < 8000) {
+                        // Shaking
+                        let shake = 0.1;
+                        eqRoom.object3D.position.set(-100 + (Math.random()-0.5)*shake, (Math.random()-0.5)*shake, (Math.random()-0.5)*shake);
+                        text = "EARTHQUAKE: Press [C] to Drop! Use [WASD] to Cover under table or Escape!";
+                        
+                        // Drop Debris at 6s
+                        if (state.quakeTimer > 6000 && !this.debrisDropped) {
+                            this.debrisDropped = true;
+                            let debris = document.createElement('a-box');
+                            debris.setAttribute('position', '-100 3 0');
+                            debris.setAttribute('width', '2');
+                            debris.setAttribute('height', '0.2');
+                            debris.setAttribute('depth', '2');
+                            debris.setAttribute('color', '#333');
+                            debris.setAttribute('ammo-body', 'type: dynamic; mass: 50');
+                            debris.setAttribute('ammo-shape', 'type: box');
+                            document.querySelector('a-scene').appendChild(debris);
+                        }
+                    } else if (state.quakeTimer >= 8000 && state.quakeTimer < 8500) {
+                        eqRoom.object3D.position.set(-100, 0, 0); // Stop shaking
+                        // Check if safe (under table or outside room bounds)
+                        let rx = headPos.x + 100;
+                        let rz = headPos.z;
+                        let underTable = headPos.y < 1.0 && rx > -0.8 && rx < 0.8 && rz > -0.8 && rz < 0.8;
+                        let escaped = rx < -4 || rx > 4 || rz < -4 || rz > 4; // Out the door
+                        
+                        if (!underTable && !escaped) {
+                            this.failScenario("Hit by debris! You must Drop, Cover, and Hold On beneath a sturdy object, or immediately evacuate.");
+                            state.quakeActive = false;
+                        } else {
+                            text = "SURVIVED: Shaking stopped. Carefully evacuate.";
+                        }
+                    } else {
+                        text = "SURVIVED: Shaking stopped. Carefully evacuate.";
+                    }
+                }
 
-        // Keyboard Crouch ('C' Key) for PC users testing WebXR behavior
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'c' || e.key === 'C') {
-                let rig = document.querySelector('#rig');
-                let curY = rig.getAttribute('position').y;
-                // A-Frame head is at 1.6m height natively. Dropping rig by 0.8m mimics physical crouch to 0.8m height.
-                rig.setAttribute('position', {x: rig.getAttribute('position').x, y: curY === 0 ? -0.8 : 0, z: rig.getAttribute('position').z});
+                // -------------------------------------------------------------
+                // WAR/AIR RAID SCENARIO
+                // -------------------------------------------------------------
+                else if (state.currentScenario === 'WAR' && state.warActive) {
+                    state.warTimer -= (timeDelta / 1000);
+                    let sec = Math.ceil(Math.max(0, state.warTimer));
+                    
+                    if (state.warTimer > 0) {
+                        text = `AIR RAID in ${sec}s! Run [WASD] behind interior wall to avoid glass blast!`;
+                    } else if (state.warTimer <= 0 && state.warTimer > -1) {
+                        // BLAST FLASH
+                        document.querySelector('#flash-plane').setAttribute('material', 'opacity: 1');
+                        
+                        // Check survival (X > 2 is behind structural wall)
+                        // Local X compared to room at 0, 0, -100
+                        let rx = headPos.x;
+                        if (rx < 2.0) {
+                            this.failScenario("Lethal glass shrapnel from windows. Always seek interior windowless rooms.");
+                            state.warActive = false;
+                        }
+                    } else {
+                        // SURVIVED
+                        document.querySelector('#flash-plane').setAttribute('material', 'opacity: 0');
+                        text = "SURVIVED: You were protected from the blast wave. Wait for All Clear.";
+                    }
+                }
+
+                // Update HUD Text
+                if (this.hudText && this.hudText.getAttribute('value') !== text) {
+                    this.hudText.setAttribute('value', text);
+                }
+            },
+
+            failScenario: function(reason) {
+                this.hudText.setAttribute('value', "FAILED: " + reason);
+                this.hudText.setAttribute('color', 'red');
+                this.overlay.setAttribute('material', 'opacity: 1');
+                
+                setTimeout(() => {
+                    // Reset to hub
+                    let rig = document.querySelector('#rig');
+                    rig.setAttribute('position', '0 0 4');
+                    window.gameState.currentScenario = 'HUB';
+                    window.gameState.crouching = false;
+                    this.hudText.setAttribute('color', 'yellow');
+                    this.overlay.setAttribute('material', 'opacity: 0');
+                }, 3500);
             }
         });
     </script>
 </head>
 
 <body style="margin: 0;">
-    <!-- Main A-Frame Scene -->
     <a-scene scenario-manager cursor="rayOrigin: mouse" raycaster="objects: .clickable" physics="driver: ammo; gravity: -9.8; debug: false">
 
         <!-- ===== LIGHTING ===== -->
-        <a-light type="ambient" intensity="0.5"></a-light>
-        <a-light type="directional" position="2 4 3" intensity="0.4"></a-light>
+        <a-light type="ambient" intensity="0.6"></a-light>
 
         <!-- ===== PLAYER RIG ===== -->
         <a-entity id="rig" movement-controls="speed: 0.15;" kinematic-body position="0 0 4">
-            
-            <!-- Head (Camera) -->
-            <a-entity id="head" camera position="0 1.6 0" look-controls></a-entity>
-
-            <!-- Left Hand (Physics body, Raycaster, Smartwatch UI) -->
-            <a-entity id="leftHand" hand-controls="hand: left" laser-controls="hand: left" raycaster="objects: .clickable; far: 5" ammo-body="type: kinematic" ammo-shape="type: sphere; fit: manual; sphereRadius: 0.1;">
-                <!-- Smartwatch Mesh attached to left wrist -->
-                <a-entity position="0 0 0.1" rotation="-45 90 0">
-                    <a-box width="0.1" height="0.1" depth="0.02" color="#222"></a-box>
-                    <a-plane position="0 0 0.011" width="0.09" height="0.09" color="#111"></a-plane>
-                    <a-text id="watch-text" value="INIT" position="0 0 0.012" align="center" width="0.3" color="#FF3333"></a-text>
+            <!-- Camera + HUD -->
+            <a-entity id="head" camera position="0 1.6 0" look-controls>
+                <a-entity id="hud" position="0 -0.15 -0.5">
+                    <a-text id="hud-text" align="center" width="0.8" color="yellow" value="Loading..."></a-text>
                 </a-entity>
+                <!-- Death Fade Overlay -->
+                <a-plane id="fade-overlay" position="0 0 -0.4" width="2" height="2" color="black" material="opacity: 0; transparent: true"></a-plane>
             </a-entity>
-
-            <!-- Right Hand (Physics body, Raycaster) -->
-            <a-entity id="rightHand" hand-controls="hand: right" laser-controls="hand: right" raycaster="objects: .clickable; far: 5" ammo-body="type: kinematic" ammo-shape="type: sphere; fit: manual; sphereRadius: 0.1;"></a-entity>
+            <a-entity id="leftHand" hand-controls="hand: left" laser-controls="hand: left" raycaster="objects: .clickable; far: 5"></a-entity>
+            <a-entity id="rightHand" hand-controls="hand: right" laser-controls="hand: right" raycaster="objects: .clickable; far: 5"></a-entity>
         </a-entity>
 
         <!-- ################################################ -->
-        <!-- ===== ROOM 0: HUB ZONE =====                     -->
+        <!-- ===== ROOM 0: HUB ZONE (0,0,0) =====             -->
         <!-- ################################################ -->
         <a-entity id="hub-room" position="0 0 0">
-            <!-- Room Geometry -->
-            <a-plane position="0 0 0" rotation="-90 0 0" width="10" height="10" color="#f2f2f2"></a-plane>
-            <a-box position="0 2 -5" width="10" height="4" depth="0.2" color="#bdc3c7"></a-box>
-            <a-plane position="0 4 0" rotation="90 0 0" width="10" height="10" color="#ecf0f1"></a-plane>
+            <a-plane position="0 0 0" rotation="-90 0 0" width="10" height="10" color="#ecf0f1" ammo-body="type: static" ammo-shape="type: box"></a-plane>
+            <a-text value="EMERGENCY PREVENTION TRAINING\nSelect a Scenario" position="0 3 -4.8" align="center" color="#2c3e50" scale="2 2 2"></a-text>
             
-            <!-- Instructions -->
-            <a-text value="EMERGENCY VR TRAINING" position="0 3 -4.8" align="center" color="#2c3e50" scale="2 2 2"></a-text>
-            <a-text value="Walk to a door and click to start scenario.\nUse [WASD/Thumbstick] to move. Press [C] to Crouch on PC." position="0 2.2 -4.8" align="center" color="#e74c3c"></a-text>
+            <a-box class="clickable" portal="target: 0 0 104; scenario: FIRE" position="-3 1.5 -4" width="1.5" height="3" depth="0.1" color="#E74C3C"></a-box>
+            <a-text value="FIRE\n(Keyboard Logic)" position="-3 3.5 -4" align="center" color="#E74C3C"></a-text>
             
-            <!-- Portals -->
-            <!-- Fire -->
-            <a-box class="clickable" portal="target: 0 0 104; scenario: FIRE" position="-3 1.5 -4" width="1.5" height="3" depth="0.1" color="#E74C3C" animation__hover="property: scale; to: 1.05 1.05 1; dur: 200; startEvents: mouseenter" animation__leave="property: scale; to: 1 1 1; dur: 200; startEvents: mouseleave"></a-box>
-            <a-text value="FIRE\n(Crouch)" position="-3 3.5 -4" align="center" color="#E74C3C"></a-text>
-            
-            <!-- Flood -->
-            <a-box class="clickable" portal="target: 100 0 4; scenario: FLOOD" position="-1 1.5 -4" width="1.5" height="3" depth="0.1" color="#3498DB" animation__hover="property: scale; to: 1.05 1.05 1; dur: 200; startEvents: mouseenter" animation__leave="property: scale; to: 1 1 1; dur: 200; startEvents: mouseleave"></a-box>
-            <a-text value="FLOOD\n(Breaker)" position="-1 3.5 -4" align="center" color="#3498DB"></a-text>
+            <a-box class="clickable" portal="target: 100 0 4; scenario: FLOOD" position="-1 1.5 -4" width="1.5" height="3" depth="0.1" color="#3498DB"></a-box>
+            <a-text value="FLOOD\n(Breaker & Climb)" position="-1 3.5 -4" align="center" color="#3498DB"></a-text>
 
-            <!-- Earthquake -->
-            <a-box class="clickable" portal="target: -100 0 4; scenario: EARTHQUAKE" position="1 1.5 -4" width="1.5" height="3" depth="0.1" color="#F1C40F" animation__hover="property: scale; to: 1.05 1.05 1; dur: 200; startEvents: mouseenter" animation__leave="property: scale; to: 1 1 1; dur: 200; startEvents: mouseleave"></a-box>
-            <a-text value="QUAKE\n(Table)" position="1 3.5 -4" align="center" color="#F1C40F"></a-text>
+            <a-box class="clickable" portal="target: -100 0 4; scenario: EARTHQUAKE" position="1 1.5 -4" width="1.5" height="3" depth="0.1" color="#F1C40F"></a-box>
+            <a-text value="QUAKE\n(Debris Physics)" position="1 3.5 -4" align="center" color="#F1C40F"></a-text>
 
-            <!-- War -->
-            <a-box class="clickable" portal="target: 0 0 -96; scenario: WAR" position="3 1.5 -4" width="1.5" height="3" depth="0.1" color="#34495E" animation__hover="property: scale; to: 1.05 1.05 1; dur: 200; startEvents: mouseenter" animation__leave="property: scale; to: 1 1 1; dur: 200; startEvents: mouseleave"></a-box>
-            <a-text value="AIR RAID\n(Interior)" position="3 3.5 -4" align="center" color="#34495E"></a-text>
+            <a-box class="clickable" portal="target: 0 0 -96; scenario: WAR" position="3 1.5 -4" width="1.5" height="3" depth="0.1" color="#34495E"></a-box>
+            <a-text value="AIR RAID\n(Blast Timer)" position="3 3.5 -4" align="center" color="#34495E"></a-text>
         </a-entity>
 
         <!-- ################################################ -->
-        <!-- ===== ROOM 1: FIRE PROTOCOL =====                -->
+        <!-- ===== ROOM 1: FIRE PROTOCOL (0,0,100) =====      -->
         <!-- ################################################ -->
         <a-entity id="fire-room" position="0 0 100">
-            <a-plane position="0 0 0" rotation="-90 0 0" width="10" height="10" color="#222"></a-plane>
-            <a-box position="0 2 -5" width="10" height="4" depth="0.2" color="#333"></a-box>
+            <a-plane position="0 0 0" rotation="-90 0 0" width="10" height="10" color="#222" ammo-body="type: static" ammo-shape="type: box"></a-plane>
+            <a-box position="0 2 -5" width="10" height="4" depth="0.2" color="#333" ammo-body="type: static" ammo-shape="type: box"></a-box>
             
-            <!-- Flames & Orange Glow -->
-            <a-light type="point" position="0 1 -3" color="#ff6b2b" intensity="1.5"></a-light>
-            <!-- Toxic Smoke Layer (Y = 1.2 meters) -->
-            <a-plane position="0 1.2 0" rotation="-90 0 0" width="10" height="10" color="#111" material="opacity: 0.85; transparent: true" side="double"></a-plane>
+            <!-- Fire Alarm Box -->
+            <a-box id="alarm-box" position="0 1.5 -4.8" width="0.3" height="0.4" depth="0.1" color="#e74c3c"></a-box>
+            <a-text value="ALARM" position="0 1.8 -4.8" align="center" color="white" scale="0.5 0.5 0.5"></a-text>
+            
+            <a-light id="fire-light" type="point" position="0 1 -3" color="#ff6b2b" intensity="1.5"></a-light>
+            <!-- Toxic Smoke Plane -->
+            <a-plane position="0 1.2 0" rotation="-90 0 0" width="10" height="10" color="#111" material="opacity: 0.9; transparent: true"></a-plane>
 
-            <!-- Return door (Fire Exit) -->
             <a-box class="clickable" portal="target: 0 0 4; scenario: HUB" position="0 1.5 4.8" width="1.5" height="3" depth="0.1" color="#2ecc71"></a-box>
-            <a-text value="EXIT\n(Return to Hub)" position="0 3.5 4.8" rotation="0 180 0" align="center" color="#2ecc71"></a-text>
         </a-entity>
 
         <!-- ################################################ -->
-        <!-- ===== ROOM 2: FLOOD PROTOCOL =====               -->
+        <!-- ===== ROOM 2: FLOOD PROTOCOL (100,0,0) =====     -->
         <!-- ################################################ -->
         <a-entity id="flood-room" position="100 0 0">
-            <a-plane position="0 0 0" rotation="-90 0 0" width="10" height="10" color="#6c7a89"></a-plane>
-            <a-box position="0 2 -5" width="10" height="4" depth="0.2" color="#5a6572"></a-box>
+            <a-plane position="0 0 0" rotation="-90 0 0" width="10" height="10" color="#6c7a89" ammo-body="type: static" ammo-shape="type: box"></a-plane>
             
-            <!-- Rising Water Plane (Controlled by manager) -->
-            <a-plane id="water-plane" position="0 -0.5 0" rotation="-90 0 0" width="10" height="10" color="#5c4a3d" material="opacity: 0.8; transparent: true" side="double"></a-plane>
+            <!-- Breaker Box -->
+            <a-box position="0 2.8 -4.8" width="0.6" height="0.8" depth="0.15" color="#bdc3c7"></a-box>
+            <a-box id="breaker-handle" position="0 -0.1 0.1" width="0.1" height="0.3" depth="0.1" color="#e74c3c"></a-box>
             
-            <!-- Objective: Power Breaker Box -->
-            <a-entity position="0 2.8 -4.8">
-                <a-box width="0.6" height="0.8" depth="0.15" color="#bdc3c7"></a-box>
-                <a-box id="breaker-handle" class="clickable" position="0 -0.1 0.1" width="0.1" height="0.3" depth="0.1" color="#e74c3c" animation__hover="property: color; to: #c0392b; dur: 200; startEvents: mouseenter" animation__leave="property: color; to: #e74c3c; dur: 200; startEvents: mouseleave"></a-box>
-                <a-text value="RESET\nPOWER" position="0 0.25 0.08" text="color: red; align: center; width: 1.5"></a-text>
-            </a-entity>
+            <!-- Rising Water Plane (Local to room) -->
+            <a-plane id="water-plane" position="0 -0.5 0" rotation="-90 0 0" width="10" height="10" color="#5c4a3d" material="opacity: 0.8; transparent: true"></a-plane>
+            
+            <!-- Safe High Ground (Staircase + Platform) -->
+            <!-- Base step -->
+            <a-box position="3 0.5 -3" width="2" height="1" depth="2" color="#7f8c8d" ammo-body="type: static" ammo-shape="type: box"></a-box>
+            <!-- Next step -->
+            <a-box position="3 1.5 -1" width="2" height="1" depth="2" color="#7f8c8d" ammo-body="type: static" ammo-shape="type: box"></a-box>
+            <!-- Top Platform (Safe from 2.5m water) -->
+            <a-box position="3 2.5 2" width="2" height="1" depth="4" color="#2ecc71" ammo-body="type: static" ammo-shape="type: box"></a-box>
 
-            <!-- Return door -->
-            <a-box class="clickable" portal="target: 0 0 4; scenario: HUB" position="0 1.5 4.8" width="1.5" height="3" depth="0.1" color="#2ecc71"></a-box>
+            <a-box class="clickable" portal="target: 0 0 4; scenario: HUB" position="-3 1.5 4.8" width="1.5" height="3" depth="0.1" color="#2ecc71"></a-box>
         </a-entity>
 
         <!-- ################################################ -->
-        <!-- ===== ROOM 3: EARTHQUAKE PROTOCOL =====          -->
+        <!-- ===== ROOM 3: EARTHQUAKE PROTOCOL (-100,0,0) === -->
         <!-- ################################################ -->
         <a-entity id="eq-room" position="-100 0 0">
-            <a-plane position="0 0 0" rotation="-90 0 0" width="10" height="10" color="#d3b8ae"></a-plane>
+            <a-plane position="0 0 0" rotation="-90 0 0" width="10" height="10" color="#d3b8ae" ammo-body="type: static" ammo-shape="type: box"></a-plane>
             <a-box position="0 2 -5" width="10" height="4" depth="0.2" color="#c1a59a"></a-box>
             
-            <!-- Sturdy Table in center -->
-            <a-entity position="0 0 0">
-                <a-box position="0 0.8 0" width="1.5" height="0.1" depth="1.5" color="#5C4033"></a-box>
-                <!-- Legs -->
-                <a-box position="-0.7 0.4 -0.7" width="0.1" height="0.8" depth="0.1" color="#3e2723"></a-box>
-                <a-box position="0.7 0.4 -0.7" width="0.1" height="0.8" depth="0.1" color="#3e2723"></a-box>
-                <a-box position="-0.7 0.4 0.7" width="0.1" height="0.8" depth="0.1" color="#3e2723"></a-box>
-                <a-box position="0.7 0.4 0.7" width="0.1" height="0.8" depth="0.1" color="#3e2723"></a-box>
-            </a-entity>
+            <!-- Sturdy Table (Protects from physics debris) -->
+            <a-box position="0 0.8 0" width="1.5" height="0.1" depth="1.5" color="#5C4033" ammo-body="type: static" ammo-shape="type: box"></a-box>
+            <a-box position="-0.7 0.4 -0.7" width="0.1" height="0.8" depth="0.1" color="#3e2723" ammo-body="type: static" ammo-shape="type: box"></a-box>
+            <a-box position="0.7 0.4 -0.7" width="0.1" height="0.8" depth="0.1" color="#3e2723" ammo-body="type: static" ammo-shape="type: box"></a-box>
+            <a-box position="-0.7 0.4 0.7" width="0.1" height="0.8" depth="0.1" color="#3e2723" ammo-body="type: static" ammo-shape="type: box"></a-box>
+            <a-box position="0.7 0.4 0.7" width="0.1" height="0.8" depth="0.1" color="#3e2723" ammo-body="type: static" ammo-shape="type: box"></a-box>
 
-            <!-- Return door -->
             <a-box class="clickable" portal="target: 0 0 4; scenario: HUB" position="0 1.5 4.8" width="1.5" height="3" depth="0.1" color="#2ecc71"></a-box>
         </a-entity>
 
         <!-- ################################################ -->
-        <!-- ===== ROOM 4: WAR / AIR RAID PROTOCOL =====      -->
+        <!-- ===== ROOM 4: WAR PROTOCOL (0,0,-100) ======     -->
         <!-- ################################################ -->
         <a-entity id="war-room" position="0 0 -100">
-            <a-plane position="0 0 0" rotation="-90 0 0" width="10" height="10" color="#7f8c8d"></a-plane>
-            <a-box position="0 2 -5" width="10" height="4" depth="0.2" color="#95a5a6"></a-box>
+            <a-plane position="0 0 0" rotation="-90 0 0" width="10" height="10" color="#7f8c8d" ammo-body="type: static" ammo-shape="type: box"></a-plane>
+            <!-- Flash plane directly in front of windows to simulate blast -->
+            <a-plane id="flash-plane" position="-4.7 2 0" rotation="0 90 0" width="8" height="4" color="white" material="opacity: 0; transparent: true"></a-plane>
             
-            <!-- Large Windows on left wall (Dangerous) -->
+            <!-- Large Windows (Lethal zone) -->
             <a-plane position="-4.8 2 0" rotation="0 90 0" width="8" height="3" color="#add8e6" material="opacity: 0.3; transparent: true"></a-plane>
-            <a-text value="<-- DANGER:\nGLASS SHATTER" position="-4.5 2 0" rotation="0 90 0" color="red"></a-text> <!-- Flipped so it's readable looking left -->
+            
+            <!-- Interior Safe Wall Corridor (Safe zone: X > 2) -->
+            <a-box position="2.5 2 0" width="0.2" height="4" depth="8" color="#2c3e50" ammo-body="type: static" ammo-shape="type: box"></a-box>
+            <a-text value="SAFE CORRIDOR" position="2.3 2 0" rotation="0 -90 0" color="#2ecc71"></a-text>
 
-            <!-- Safe Zone (Interior reinforced wall corridor) on right -->
-            <a-box position="2.5 2 0" width="0.2" height="4" depth="8" color="#2c3e50"></a-box>
-            <a-text value="SAFE ZONE:\nINTERIOR WALL" position="2.3 2 0" rotation="0 -90 0" color="#2ecc71"></a-text>
-
-            <!-- Return door -->
             <a-box class="clickable" portal="target: 0 0 4; scenario: HUB" position="0 1.5 4.8" width="1.5" height="3" depth="0.1" color="#2ecc71"></a-box>
         </a-entity>
 
