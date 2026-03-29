@@ -470,6 +470,74 @@
       <a-plane position="-4.1 2.2 -7.5" width="0.8" height="0.5" color="#FFFFFF"></a-plane>
       <a-plane position="-4.1 1.7 -7.5" width="0.8" height="0.5" color="#138808"></a-plane>
 
+      <!-- ================================================ -->
+      <!-- ===== SEATED PEOPLE ===== -->
+      <!-- A figure = head (sphere) + torso (box) + lap (box) + arms (2 boxes) -->
+      <!-- Seated position: torso upright, lap horizontal, on chair seat -->
+      <!-- ================================================ -->
+
+      <!-- TEACHER (at teacher's desk, chair at z=-5.8) -->
+      <!-- Lap/thighs -->
+      <a-box position="0 0.47 -5.8" width="0.38" height="0.12" depth="0.42" color="#2C3E50"></a-box>
+      <!-- Torso -->
+      <a-box position="0 0.82 -5.82" width="0.36" height="0.55" depth="0.22" color="#2980B9"></a-box>
+      <!-- Head -->
+      <a-sphere position="0 1.26 -5.82" radius="0.15" color="#F5CBA7"></a-sphere>
+      <!-- Left arm -->
+      <a-box position="-0.26 0.82 -5.85" width="0.1" height="0.45" depth="0.12" color="#2980B9"></a-box>
+      <!-- Right arm -->
+      <a-box position="0.26 0.82 -5.85" width="0.1" height="0.45" depth="0.12" color="#2980B9"></a-box>
+      <!-- Hair (teacher) -->
+      <a-sphere position="0 1.36 -5.82" radius="0.13" color="#1C1C1C" scale="1 0.5 1"></a-sphere>
+
+      <!-- STUDENT 1 — Desk (-2.5, z=-4), chair z=-3.3, shirt red -->
+      <a-box position="-2.5 0.4 -3.3" width="0.35" height="0.12" depth="0.38" color="#2C2C2C"></a-box>
+      <a-box position="-2.5 0.75 -3.32" width="0.33" height="0.5" depth="0.2" color="#E74C3C"></a-box>
+      <a-sphere position="-2.5 1.15 -3.32" radius="0.14" color="#FAD7A0"></a-sphere>
+      <a-box position="-2.74 0.75 -3.34" width="0.09" height="0.42" depth="0.11" color="#E74C3C"></a-box>
+      <a-box position="-2.26 0.75 -3.34" width="0.09" height="0.42" depth="0.11" color="#E74C3C"></a-box>
+      <a-sphere position="-2.5 1.24 -3.32" radius="0.12" color="#17202A" scale="1 0.45 1"></a-sphere>
+
+      <!-- STUDENT 2 — Desk (0, z=-4), chair z=-3.3, shirt blue -->
+      <a-box position="0 0.4 -3.3" width="0.35" height="0.12" depth="0.38" color="#2C2C2C"></a-box>
+      <a-box position="0 0.75 -3.32" width="0.33" height="0.5" depth="0.2" color="#27AE60"></a-box>
+      <a-sphere position="0 1.15 -3.32" radius="0.14" color="#F0B27A"></a-sphere>
+      <a-box position="-0.24 0.75 -3.34" width="0.09" height="0.42" depth="0.11" color="#27AE60"></a-box>
+      <a-box position="0.24 0.75 -3.34" width="0.09" height="0.42" depth="0.11" color="#27AE60"></a-box>
+      <a-sphere position="0 1.24 -3.32" radius="0.12" color="#784212" scale="1 0.45 1"></a-sphere>
+
+      <!-- STUDENT 3 — Desk (2.5, z=-4), chair z=-3.3, shirt green -->
+      <a-box position="2.5 0.4 -3.3" width="0.35" height="0.12" depth="0.38" color="#2C2C2C"></a-box>
+      <a-box position="2.5 0.75 -3.32" width="0.33" height="0.5" depth="0.2" color="#8E44AD"></a-box>
+      <a-sphere position="2.5 1.15 -3.32" radius="0.14" color="#FDEBD0"></a-sphere>
+      <a-box position="2.26 0.75 -3.34" width="0.09" height="0.42" depth="0.11" color="#8E44AD"></a-box>
+      <a-box position="2.74 0.75 -3.34" width="0.09" height="0.42" depth="0.11" color="#8E44AD"></a-box>
+      <a-sphere position="2.5 1.24 -3.32" radius="0.12" color="#1C1C1C" scale="1 0.45 1"></a-sphere>
+
+      <!-- STUDENT 4 — Desk (-2.5, z=-1.5), chair z=-0.8, shirt yellow -->
+      <a-box position="-2.5 0.4 -0.8" width="0.35" height="0.12" depth="0.38" color="#2C2C2C"></a-box>
+      <a-box position="-2.5 0.75 -0.82" width="0.33" height="0.5" depth="0.2" color="#F39C12"></a-box>
+      <a-sphere position="-2.5 1.15 -0.82" radius="0.14" color="#FAD7A0"></a-sphere>
+      <a-box position="-2.74 0.75 -0.84" width="0.09" height="0.42" depth="0.11" color="#F39C12"></a-box>
+      <a-box position="-2.26 0.75 -0.84" width="0.09" height="0.42" depth="0.11" color="#F39C12"></a-box>
+      <a-sphere position="-2.5 1.24 -0.82" radius="0.12" color="#784212" scale="1 0.45 1"></a-sphere>
+
+      <!-- STUDENT 5 — Desk (0, z=-1.5), chair z=-0.8, shirt pink -->
+      <a-box position="0 0.4 -0.8" width="0.35" height="0.12" depth="0.38" color="#2C2C2C"></a-box>
+      <a-box position="0 0.75 -0.82" width="0.33" height="0.5" depth="0.2" color="#E91E63"></a-box>
+      <a-sphere position="0 1.15 -0.82" radius="0.14" color="#F5CBA7"></a-sphere>
+      <a-box position="-0.24 0.75 -0.84" width="0.09" height="0.42" depth="0.11" color="#E91E63"></a-box>
+      <a-box position="0.24 0.75 -0.84" width="0.09" height="0.42" depth="0.11" color="#E91E63"></a-box>
+      <a-sphere position="0 1.24 -0.82" radius="0.12" color="#1C1C1C" scale="1 0.5 1"></a-sphere>
+
+      <!-- STUDENT 6 — Desk (2.5, z=-1.5), chair z=-0.8, shirt purple -->
+      <a-box position="2.5 0.4 -0.8" width="0.35" height="0.12" depth="0.38" color="#2C2C2C"></a-box>
+      <a-box position="2.5 0.75 -0.82" width="0.33" height="0.5" depth="0.2" color="#1ABC9C"></a-box>
+      <a-sphere position="2.5 1.15 -0.82" radius="0.14" color="#FDEBD0"></a-sphere>
+      <a-box position="2.26 0.75 -0.84" width="0.09" height="0.42" depth="0.11" color="#1ABC9C"></a-box>
+      <a-box position="2.74 0.75 -0.84" width="0.09" height="0.42" depth="0.11" color="#1ABC9C"></a-box>
+      <a-sphere position="2.5 1.24 -0.82" radius="0.12" color="#17202A" scale="1 0.45 1"></a-sphere>
+
     </a-entity>
 
   </a-scene>
