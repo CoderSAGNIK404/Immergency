@@ -2,15 +2,269 @@
 <html>
 
 <head>
-  <meta charset="utf-8" />
-  <title>Young Innovators STEM Lab</title>
-  <script src="https://aframe.io/releases/1.7.1/aframe.min.js"></script>
+    <meta charset="utf-8" />
+    <title>Terrestrial Protocol - Scenario 1: Rising Tide</title>
+    <!-- A-Frame Core -->
+    <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+    <!-- A-Frame Physics System (Ammo driver) -->
+    <script src="https://cdn.jsdelivr.net/gh/MozillaReality/ammo.js@8bbc0ea/builds/ammo.wasm.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/c-frame/aframe-physics-system@v4.2.2/dist/aframe-physics-system.min.js"></script>
+    <!-- A-Frame Extras (for movement controls) -->
+    <script src="https://cdn.jsdelivr.net/gh/c-frame/aframe-extras@7.2.0/dist/aframe-extras.min.js"></script>
+
+    <!-- ===== CUSTOM COMPONENTS ===== -->
+    <script>
+        // Global Game State
+        window.gameState = {
+            protocolComplete: false,
+            waterLevelY: -1.0,
+            waterRiseSpeed: 0.15 // meters per second
+        };
+
+        // 1. HAZARD: RISING WATER
+        AFRAME.registerComponent('rising-water', {
+            schema: {
+                speed: { type: 'number', default: window.gameState.waterRiseSpeed },
+                maxHeight: { type: 'number', default: 3.0 }
+            },
+            tick: function (time, timeDelta) {
+                if (window.gameState.protocolComplete) return; // Stop if won
+
+                // Calculate upward movement based on timeDelta
+                let riseAmount = this.data.speed * (timeDelta / 1000);
+                let currentPos = this.el.getAttribute('position');
+
+                if (currentPos.y < this.data.maxHeight) {
+                    currentPos.y += riseAmount;
+                    this.el.setAttribute('position', currentPos);
+                    window.gameState.waterLevelY = currentPos.y; // Update global state
+                }
+            }
+        });
+
+        // 2. PHYSICS: BUOYANCY
+        AFRAME.registerComponent('buoyancy', {
+            schema: {
+                density: { type: 'number', default: 1.5 }, // Upward force multiplier
+                drag: { type: 'number', default: 0.95 }    // Water resistance
+            },
+            tick: function (time, timeDelta) {
+                if (!this.el.body) return; // Wait for physics body to initialize
+
+                let meshPos = this.el.getAttribute('position');
+                let waterY = window.gameState.waterLevelY;
+
+                // Check if object is submerged
+                if (meshPos.y < waterY) {
+                    // Calculate depth submerged
+                    let depthSubmerged = waterY - meshPos.y;
+                    
+                    // Apply upward buoyant force (overcoming gravity)
+                    // Ammo.js physics API
+                    let upwardForce = new Ammo.btVector3(0, depthSubmerged * this.data.density * 10, 0);
+                    // Apply force to center of mass
+                    let centerOffset = new Ammo.btVector3(0, 0, 0); 
+                    
+                    this.el.body.applyForce(upwardForce, centerOffset);
+
+                    // Apply water drag (damping velocity)
+                    let vel = this.el.body.getLinearVelocity();
+                    vel.op_mul(this.data.drag);
+                    this.el.body.setLinearVelocity(vel);
+                    
+                    // Cleanup memory
+                    Ammo.destroy(upwardForce);
+                    Ammo.destroy(centerOffset);
+                }
+            }
+        });
+
+        // 3. DIEGETIC UI: SMARTWATCH
+        AFRAME.registerComponent('smartwatch-ui', {
+            tick: function () {
+                let textEl = this.el.querySelector('a-text');
+                if (!textEl) return;
+
+                if (window.gameState.protocolComplete) {
+                    textEl.setAttribute('value', "PROTOCOL\nCOMPLETE\nSAFE");
+                    textEl.setAttribute('color', "#00FF00"); // Green
+                } else {
+                    // Update text with current water height (formatted to 2 decimals)
+                    let currentY = window.gameState.waterLevelY.toFixed(2);
+                    textEl.setAttribute('value', `WARNING:\nWater Level\n${currentY}m\nO2: DROP`);
+                    textEl.setAttribute('color', "#FF3333"); // Red
+                }
+            }
+        });
+
+        // 4. OBJECTIVE: BREAKER BOX INTERACTION
+        // Simple distance check from hands to breaker, more reliable than physics triggers for UI
+        AFRAME.registerComponent('breaker-objective', {
+            schema: {
+                triggerDistance: { type: 'number', default: 0.4 } // How close hand needs to be
+            },
+            init: function () {
+                this.leftHand = document.querySelector('#leftHand');
+                this.rightHand = document.querySelector('#rightHand');
+                this.emergencyLight = document.querySelector('#emergency-light');
+                this.waterPlane = document.querySelector('#water-plane');
+            },
+            tick: function () {
+                if (window.gameState.protocolComplete) return;
+                if (!this.leftHand || !this.rightHand) return;
+
+                // Get positions
+                let boxPos = new THREE.Vector3();
+                this.el.object3D.getWorldPosition(boxPos);
+                
+                let lPos = new THREE.Vector3();
+                this.leftHand.object3D.getWorldPosition(lPos);
+                
+                let rPos = new THREE.Vector3();
+                this.rightHand.object3D.getWorldPosition(rPos);
+
+                // Check distance
+                let lDist = boxPos.distanceTo(lPos);
+                let rDist = boxPos.distanceTo(rPos);
+
+                if (lDist < this.data.triggerDistance || rDist < this.data.triggerDistance) {
+                    this.triggerWin();
+                }
+            },
+            triggerWin: function () {
+                console.log("Breaker Triggered! Protocol Complete.");
+                window.gameState.protocolComplete = true;
+
+                // Visual changes
+                this.el.setAttribute('color', '#00FF00'); // Box turns green
+                
+                // Change lighting from flashing red to solid white
+                this.emergencyLight.setAttribute('color', '#FFFFFF');
+                this.emergencyLight.removeAttribute('animation__flash');
+                this.emergencyLight.setAttribute('intensity', '1.0');
+                
+                // Change water colour slightly to indicate stagnation
+                this.waterPlane.setAttribute('color', '#1e382b');
+            }
+        });
+    </script>
 </head>
 
 <body>
-  <a-scene>
+    <!-- Main Scene: Ammo physics driver, Earth gravity -->
+    <a-scene physics="driver: ammo; gravity: -9.8; debug: false">
 
-  </a-scene>
+        <!-- ===== ASSETS ===== -->
+        <a-assets>
+            <img id="concrete" src="https://cdn.aframe.io/a-painter/images/floor.jpg" crossorigin="anonymous">
+            <!-- Dirty water texture -->
+            <img id="water" src="https://cdn.aframe.io/360-image-gallery-boilerplate/img/sechelt.jpg" crossorigin="anonymous">
+        </a-assets>
+
+        <!-- ===== LIGHTING ===== -->
+        <a-light type="ambient" intensity="0.2"></a-light>
+        <!-- Flashing Emergency Red Light -->
+        <a-light id="emergency-light" type="point" position="0 3 0" color="#FF0000" intensity="1.5"
+                 animation__flash="property: intensity; from: 0.5; to: 2.0; loop: true; dir: alternate; dur: 800">
+        </a-light>
+
+
+        <!-- ===== PLAYER RIG ===== -->
+        <a-entity id="rig" movement-controls="speed: 0.15;" kinematic-body position="0 0 4">
+            <!-- Camera (Head) -->
+            <a-entity camera position="0 1.6 0" look-controls></a-entity>
+
+            <!-- Left Hand Controller (with physics kinematic body to push objects) -->
+            <a-entity id="leftHand" hand-controls="hand: left" ammo-body="type: kinematic" ammo-shape="type: sphere; fit: manual; sphereRadius: 0.1;">
+                
+                <!-- Smartwatch UI Diegetic Attachment -->
+                <!-- Positioned on the "wrist", tilted to face the player when arm is raised -->
+                <a-entity position="0 0 0.1" rotation="-45 90 0">
+                    <!-- Watch Body -->
+                    <a-box width="0.1" height="0.1" depth="0.02" color="#222" smartwatch-ui></a-box>
+                    <!-- Watch Screen Glow -->
+                    <a-plane position="0 0 0.011" width="0.09" height="0.09" color="#111"></a-plane>
+                    <!-- Watch Text Readout -->
+                    <a-text value="INIT" position="0 0 0.012" align="center" width="0.3" color="#FF3333"></a-text>
+                </a-entity>
+                
+            </a-entity>
+
+            <!-- Right Hand Controller (with physics kinematic body) -->
+            <a-entity id="rightHand" hand-controls="hand: right" ammo-body="type: kinematic" ammo-shape="type: sphere; fit: manual; sphereRadius: 0.1;"></a-entity>
+        </a-entity>
+
+
+        <!-- ===== ENVIRONMENT (Subterranean Room) ===== -->
+        <a-entity id="room">
+            <!-- Floor (Static physics body) -->
+            <a-plane position="0 0 0" rotation="-90 0 0" width="10" height="10" src="#concrete" repeat="5 5" color="#555"
+                     ammo-body="type: static" ammo-shape="type: box"></a-plane>
+            
+            <!-- Ceiling -->
+            <a-plane position="0 4 0" rotation="90 0 0" width="10" height="10" src="#concrete" repeat="5 5" color="#444"
+                     ammo-body="type: static" ammo-shape="type: box"></a-plane>
+
+            <!-- Walls (Static physics bodies) -->
+            <!-- Back Wall -->
+            <a-box position="0 2 -5" width="10" height="4" depth="0.2" src="#concrete" repeat="5 2" color="#666"
+                   ammo-body="type: static" ammo-shape="type: box"></a-box>
+            <!-- Front Wall -->
+            <a-box position="0 2 5" width="10" height="4" depth="0.2" src="#concrete" repeat="5 2" color="#666"
+                   ammo-body="type: static" ammo-shape="type: box"></a-box>
+            <!-- Left Wall -->
+            <a-box position="-5 2 0" width="0.2" height="4" depth="10" src="#concrete" repeat="5 2" color="#555"
+                   ammo-body="type: static" ammo-shape="type: box"></a-box>
+            <!-- Right Wall -->
+            <a-box position="5 2 0" width="0.2" height="4" depth="10" src="#concrete" repeat="5 2" color="#555"
+                   ammo-body="type: static" ammo-shape="type: box"></a-box>
+        </a-entity>
+
+
+        <!-- ===== THE HAZARD (Rising Water) ===== -->
+        <!-- Starts at y=-0.5 (just below floor), semi-transparent brown/blue -->
+        <a-plane id="water-plane" position="0 -0.5 0" rotation="-90 0 0" width="9.8" height="9.8" 
+                 color="#4a3e2e" material="opacity: 0.8; transparent: true; src: #water; repeat: 2 2"
+                 rising-water></a-plane>
+
+
+        <!-- ===== DYNAMIC PHYSICS OBJECTS (Debris/Crates) ===== -->
+        <!-- These use ammo-body="type: dynamic" to fall with gravity, and have our custom 'buoyancy' script -->
+        
+        <!-- Wooden Crate 1 -->
+        <a-box position="-2 2 -2" width="0.8" height="0.8" depth="0.8" color="#8B4513" 
+               ammo-body="type: dynamic; mass: 5;" ammo-shape="type: box" buoyancy="density: 2.0; drag: 0.90"></a-box>
+        
+        <!-- Wooden Crate 2 -->
+        <a-box position="1.5 3 -1.5" width="1" height="1" depth="1" color="#5C4033" 
+               ammo-body="type: dynamic; mass: 8;" ammo-shape="type: box" buoyancy="density: 1.8; drag: 0.92"></a-box>
+
+        <!-- Metal Barrel 1 -->
+        <a-cylinder position="-1 1.5 -3" radius="0.4" height="1.2" color="#3a3c3d" 
+                    ammo-body="type: dynamic; mass: 15;" ammo-shape="type: cylinder" buoyancy="density: 1.2; drag: 0.95"></a-cylinder>
+        
+        <!-- Small Pallet/Plank -->
+        <a-box position="2 1 1" width="1.5" height="0.1" depth="0.6" color="#a07c57" 
+               ammo-body="type: dynamic; mass: 3;" ammo-shape="type: box" buoyancy="density: 3.0; drag: 0.85"></a-box>
+
+
+        <!-- ===== THE OBJECTIVE (Breaker Box) ===== -->
+        <!-- Positioned high on the back wall -->
+        <a-entity position="0 2.8 -4.8">
+            <!-- Box exterior -->
+            <a-box width="0.6" height="0.8" depth="0.15" color="#888"></a-box>
+            <!-- Danger warning label -->
+            <a-plane position="0 0.25 0.08" width="0.4" height="0.15" color="#FFD700"></a-plane>
+            <a-text value="DANGER\nHIGH VOLTAGE" position="0 0.25 0.081" text="color: black; align: center; width: 1.5"></a-text>
+            
+            <!-- Breaker Handle / Trigger Zone -->
+            <a-box id="breaker-handle" position="0 -0.1 0.1" width="0.1" height="0.3" depth="0.1" color="#FF0000" 
+                   breaker-objective="triggerDistance: 0.3"></a-box>
+            <!-- Label above handle -->
+            <a-text value="PULL SYSTEM RESET" position="0 0.1 0.08" text="color: white; align: center; width: 0.8"></a-text>
+        </a-entity>
+
+    </a-scene>
 </body>
 
 </html>
