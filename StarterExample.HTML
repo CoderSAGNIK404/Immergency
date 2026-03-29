@@ -288,22 +288,22 @@
       <a-box position="3.5 3 0.22" width="0.08" height="1.6" depth="0.05" color="#5C4033"></a-box>
 
       <!-- ===== CLICKABLE DOOR ===== -->
-      <a-entity id="door-group" class="clickable" position="0 0 0.2">
+      <a-entity id="door-group" position="0 0 0.2">
         <!-- Door frame -->
-        <a-box position="0 1.5 0" width="1.8" height="3.2" depth="0.15" color="#5C4033"></a-box>
+        <a-box class="clickable door-part" position="0 1.5 0" width="1.8" height="3.2" depth="0.15" color="#5C4033"></a-box>
         <!-- Door itself -->
-        <a-box id="school-door" position="0 1.5 0.05" width="1.5" height="3" depth="0.1" color="#8B4513"
+        <a-box id="school-door" class="clickable door-part" position="0 1.5 0.05" width="1.5" height="3" depth="0.1" color="#8B4513"
           animation__hover="property: color; to: #A0522D; dur: 200; startEvents: mouseenter"
           animation__leave="property: color; to: #8B4513; dur: 200; startEvents: mouseleave"
           animation__click="property: scale; to: 1.05 1.02 1; dur: 150; startEvents: click; dir: alternate; loop: 1">
         </a-box>
         <!-- Door handle -->
-        <a-sphere position="0.55 1.5 0.15" radius="0.08" color="#FFD700"
+        <a-sphere class="clickable door-part" position="0.55 1.5 0.15" radius="0.08" color="#FFD700"
           animation__glow="property: color; to: #FFF700; dur: 500; startEvents: mouseenter"
           animation__dim="property: color; to: #FFD700; dur: 500; startEvents: mouseleave">
         </a-sphere>
         <!-- Door arch -->
-        <a-box position="0 3.15 0" width="2" height="0.15" depth="0.2" color="#5C4033"></a-box>
+        <a-box class="clickable door-part" position="0 3.15 0" width="2" height="0.15" depth="0.2" color="#5C4033"></a-box>
       </a-entity>
 
       <!-- School name sign -->
@@ -543,7 +543,7 @@
     }
 
     // --- Door Click Handler ---
-    doorGroup.addEventListener('click', function () {
+    function handleDoorClick() {
       if (currentScene !== 'exterior') return;
 
       if (currentRole === 'teacher') {
@@ -553,6 +553,11 @@
         // Student requests permission
         requestPermission();
       }
+    }
+
+    // Attach click to all door parts (since raycaster hits mesh elements, not parent entities)
+    document.querySelectorAll('.door-part').forEach(function (part) {
+      part.addEventListener('click', handleDoorClick);
     });
 
     // --- Student Permission Flow ---
